@@ -1,7 +1,8 @@
 package de.holisticon.cinema.booking.adapter.inbound.web.admin
 
 import de.holisticon.cinema.TestcontainersConfiguration
-import de.holisticon.cinema.booking.adapter.inbound.web.BookingHttpTests
+import de.holisticon.cinema.booking.adapter.inbound.web.ControlledClock
+import de.holisticon.cinema.booking.adapter.inbound.web.ControlledClockConfiguration
 import de.holisticon.cinema.booking.application.confirm.ConfirmBooking
 import de.holisticon.cinema.booking.domain.BookingConfirmation
 import de.holisticon.cinema.booking.domain.CustomerDetails
@@ -38,13 +39,13 @@ private const val ADMIN_SHOWINGS = "/admin/showings"
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["cinema.admin.token=$ADMIN_TOKEN"],
 )
-@Import(TestcontainersConfiguration::class, BookingHttpTests.ClockConfiguration::class)
+@Import(TestcontainersConfiguration::class, ControlledClockConfiguration::class)
 class AdminShowingsHttpTests {
     @LocalServerPort
     private var port = 0
 
     @Autowired
-    private lateinit var clock: BookingHttpTests.ControlledClock
+    private lateinit var clock: ControlledClock
 
     @Autowired
     private lateinit var confirmBooking: ConfirmBooking

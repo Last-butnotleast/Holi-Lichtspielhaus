@@ -8,11 +8,8 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import java.time.Clock
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -40,7 +37,7 @@ import tools.jackson.databind.json.JsonMapper
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(
     TestcontainersConfiguration::class,
-    BookingHttpTests.ClockConfiguration::class,
+    ControlledClockConfiguration::class,
     BookingHttpTests.SeatMapProbeConfiguration::class,
 )
 class BookingHttpTests {
@@ -731,14 +728,6 @@ class BookingHttpTests {
     private data class CreatedHold(val holdId: UUID, val expiresAt: Instant)
 
     @TestConfiguration(proxyBeanMethods = false)
-    class ClockConfiguration {
-        @Bean
-        @Primary
-        fun controlledClock(): ControlledClock =
-            ControlledClock(AtomicReference(Instant.EPOCH), ZoneOffset.UTC)
-    }
-
-    @TestConfiguration(proxyBeanMethods = false)
     class SeatMapProbeConfiguration {
         @Bean
         @Primary
@@ -766,17 +755,5 @@ class BookingHttpTests {
             val seats = delegate.findSeats(showingId) ?: return null
             return interceptor.get()?.invoke(seats) ?: seats
         }
-    }
-
-    class ControlledClock(private val now: AtomicReference<Instant>, private val timeZone: ZoneId) : Clock() {
-        fun set(instant: Instant) {
-            now.set(instant)
-        }
-
-        override fun instant(): Instant = now.get()
-
-        override fun getZone(): ZoneId = timeZone
-
-        override fun withZone(zone: ZoneId): Clock = ControlledClock(now, zone)
     }
 }

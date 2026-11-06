@@ -20,6 +20,12 @@ Use `docker compose logs -f` to follow the logs and `docker compose down` to sto
 
 PostgreSQL is on the Compose network. To open a SQL shell, run `docker compose exec db psql -U cinema -d cinema`. Set `CINEMA_DB_PASSWORD` before the first start to override the local development password. To enable the optional admin API, set `CINEMA_ADMIN_TOKEN` and send it in the `Authorization: Bearer` header.
 
+## Architecture
+
+The Kotlin backend keeps booking rules in the domain, coordinates transactions in use cases, and connects HTTP and PostgreSQL through adapters. The React frontend organizes the programme and booking flow by feature and uses types generated from the backend's OpenAPI contract.
+
+The architecture diagram walks through the guest flow, concurrent holds, and the test setup. [PNG export](docs/holisticon-combined.png) · [Editable Excalidraw source](docs/holisticon-combined.excalidraw)
+
 ## Run checks and refresh the API contract
 
 The backend suite uses Java 25 and starts PostgreSQL through Testcontainers. The frontend build uses Node.js 24 and pnpm 10.10.0.
