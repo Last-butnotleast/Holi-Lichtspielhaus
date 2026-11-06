@@ -3,7 +3,7 @@ package de.holisticon.cinema.booking.application.port
 import java.time.Instant
 
 interface SeatMapReader {
-    fun findSeats(showingId: Long): List<SeatHoldSnapshot>?
+    fun findSeats(showingId: Long): List<SeatAvailabilitySnapshot>?
 }
 
-data class SeatHoldSnapshot(val seatId: Long, val expiresAt: Instant?)
+data class SeatAvailabilitySnapshot(val seatId: Long, val expiresAt: Instant?, val booked: Boolean)

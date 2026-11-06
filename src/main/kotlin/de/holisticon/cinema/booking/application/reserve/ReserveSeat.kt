@@ -1,5 +1,6 @@
 package de.holisticon.cinema.booking.application.reserve
 
+import de.holisticon.cinema.booking.application.SeatNotFound
 import de.holisticon.cinema.booking.domain.SeatHold
 import de.holisticon.cinema.booking.domain.ShowSeatRepository
 import java.time.Clock
@@ -20,6 +21,3 @@ class ReserveSeat(private val seats: ShowSeatRepository, private val clock: Cloc
         return hold
     }
 }
-
-class SeatNotFound(showingId: Long, seatId: Long) :
-    RuntimeException("Seat $seatId does not exist in showing $showingId.")

@@ -1,5 +1,7 @@
 package de.holisticon.cinema.booking.adapter.outbound.persistence
 
+import de.holisticon.cinema.booking.domain.ConfirmedBooking
+import de.holisticon.cinema.booking.domain.CustomerDetails
 import de.holisticon.cinema.booking.domain.SeatHold
 import de.holisticon.cinema.booking.domain.ShowSeat
 import de.holisticon.cinema.booking.domain.ShowSeatRepository
@@ -19,7 +21,8 @@ class JpaShowSeatRepository(private val entityManager: EntityManager) : ShowSeat
         val hold = record.holdId?.let { holdId ->
             SeatHold(holdId, checkNotNull(record.holdExpiresAt))
         }
-        return ShowSeat(showingId, seatId, hold)
+        val booking = entityManager.find(SeatBookingJpaEntity::class.java, record.id)?.toDomain()
+        return ShowSeat(showingId, seatId, hold, booking)
     }
 
     override fun save(seat: ShowSeat) {
@@ -29,5 +32,27 @@ class JpaShowSeatRepository(private val entityManager: EntityManager) : ShowSeat
 
         record.holdId = seat.hold?.id
         record.holdExpiresAt = seat.hold?.expiresAt
+        seat.booking?.let { entityManager.persist(it.toRecord(record.id)) }
     }
 }
+
+private fun SeatBookingJpaEntity.toDomain() = ConfirmedBooking(
+    bookingId,
+    holdId,
+    confirmedAt,
+    CustomerDetails(customerName, birthDate, email, phone, termsAccepted, privacyAccepted, newsletterOptIn),
+)
+
+private fun ConfirmedBooking.toRecord(seat: ShowSeatJpaId) = SeatBookingJpaEntity(
+    seat = seat,
+    bookingId = id,
+    holdId = holdId,
+    confirmedAt = confirmedAt,
+    customerName = customer.name,
+    birthDate = customer.birthDate,
+    email = customer.email,
+    phone = customer.phone,
+    termsAccepted = customer.termsAccepted,
+    privacyAccepted = customer.privacyAccepted,
+    newsletterOptIn = customer.newsletterOptIn,
+)

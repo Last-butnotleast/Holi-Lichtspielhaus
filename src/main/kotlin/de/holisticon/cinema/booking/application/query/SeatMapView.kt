@@ -7,4 +7,5 @@ data class SeatView(val seatId: Long, val status: SeatStatus)
 enum class SeatStatus {
     AVAILABLE,
     HELD,
+    BOOKED,
 }

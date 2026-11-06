@@ -13,7 +13,11 @@ class GetSeatMap(private val reader: SeatMapReader, private val clock: Clock) {
         return SeatMapView(
             showingId,
             seats.map { seat ->
-                val status = if (isHoldActive(seat.expiresAt, now)) SeatStatus.HELD else SeatStatus.AVAILABLE
+                val status = when {
+                    seat.booked -> SeatStatus.BOOKED
+                    isHoldActive(seat.expiresAt, now) -> SeatStatus.HELD
+                    else -> SeatStatus.AVAILABLE
+                }
                 SeatView(seat.seatId, status)
             },
         )
