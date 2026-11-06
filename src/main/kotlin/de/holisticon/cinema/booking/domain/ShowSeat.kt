@@ -2,9 +2,11 @@ package de.holisticon.cinema.booking.domain
 
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 
 private val HOLD_DURATION = Duration.ofMinutes(5)
+private val CINEMA_ZONE = ZoneId.of("Europe/Berlin")
 
 class ShowSeat(
     val showingId: Long,
@@ -44,6 +46,10 @@ class ShowSeat(
             throw HoldNotConfirmable(showingId, seatId)
         }
 
+        if (customer.birthDate.isAfter(now.atZone(CINEMA_ZONE).toLocalDate())) {
+            throw BirthDateInFuture()
+        }
+
         booking = ConfirmedBooking(bookingId, holdId, now, customer)
         hold = null
         return BookingConfirmation.Created(bookingId)
@@ -58,3 +64,5 @@ class SeatAlreadyBooked(showingId: Long, seatId: Long) :
 
 class HoldNotConfirmable(showingId: Long, seatId: Long) :
     RuntimeException("The supplied hold is not active for seat $seatId in showing $showingId.")
+
+class BirthDateInFuture : RuntimeException("Birth date cannot be in the future.")

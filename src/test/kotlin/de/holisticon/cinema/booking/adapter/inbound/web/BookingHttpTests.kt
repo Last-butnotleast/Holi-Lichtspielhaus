@@ -1,6 +1,8 @@
 package de.holisticon.cinema.booking.adapter.inbound.web
 
 import de.holisticon.cinema.TestcontainersConfiguration
+import de.holisticon.cinema.booking.application.port.SeatAvailabilitySnapshot
+import de.holisticon.cinema.booking.application.port.SeatMapReader
 import de.holisticon.cinema.booking.application.query.ShowingView
 import java.net.URI
 import java.net.http.HttpClient
@@ -14,6 +16,7 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.sql.DataSource
 import kotlin.test.assertEquals
@@ -22,6 +25,7 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -32,7 +36,11 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import tools.jackson.databind.json.JsonMapper
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(TestcontainersConfiguration::class, BookingHttpTests.ClockConfiguration::class)
+@Import(
+    TestcontainersConfiguration::class,
+    BookingHttpTests.ClockConfiguration::class,
+    BookingHttpTests.SeatMapProbeConfiguration::class,
+)
 class BookingHttpTests {
     @LocalServerPort
     private var port = 0
@@ -45,6 +53,9 @@ class BookingHttpTests {
 
     @Autowired
     private lateinit var jdbc: JdbcClient
+
+    @Autowired
+    private lateinit var seatMapProbe: SeatMapProbe
 
     private val client = HttpClient.newHttpClient()
     private val json = JsonMapper.builder().build()
@@ -134,6 +145,48 @@ class BookingHttpTests {
     }
 
     @Test
+    fun `a seat map read spanning hold expiry retries and sees the committed booking`() {
+        clock.set(Instant.parse("2026-11-06T18:00:00Z"))
+        val hold = createdHold(hold(7))
+        clock.set(hold.expiresAt.minusNanos(1))
+        val reads = AtomicInteger()
+
+        seatMapProbe.interceptReads({ seats ->
+            if (reads.incrementAndGet() == 1) {
+                assertEquals(
+                    SeatAvailabilitySnapshot(7, hold.expiresAt, booked = false),
+                    seats.single { it.seatId == 7L },
+                )
+                bookingId(book(7, bookingPayload(hold.holdId)), 201)
+                clock.set(hold.expiresAt)
+            }
+            seats
+        }) {
+            assertSeatStatus(7, "BOOKED")
+        }
+
+        assertEquals(2, reads.get())
+    }
+
+    @Test
+    fun `a seat map request fails with 503 after three snapshots spanning expiry`() {
+        clock.set(Instant.parse("2026-11-06T19:00:00Z"))
+        val reads = AtomicInteger()
+
+        val response = seatMapProbe.interceptReads({
+            reads.incrementAndGet()
+            val expiresAt = clock.instant().plusSeconds(1)
+            clock.set(expiresAt)
+            listOf(SeatAvailabilitySnapshot(1, expiresAt, booked = false))
+        }) {
+            get("/showings/1/seats")
+        }
+
+        assertEquals(503, response.statusCode(), response.body())
+        assertEquals(3, reads.get())
+    }
+
+    @Test
     fun `unknown showings and seats return not found`() {
         assertEquals(404, get("/showings/999/seats").statusCode())
         assertEquals(404, hold(1, showingId = 999).statusCode())
@@ -204,6 +257,31 @@ class BookingHttpTests {
         assertSeatStatus(4, "HELD")
         bookingId(book(4, bookingPayload(currentHold.holdId)), 201)
         assertSeatStatus(4, "BOOKED")
+    }
+
+    @Test
+    fun `new bookings validate the birth date against Berlin time after the seat lock`() {
+        val berlinMidnight = Instant.parse("2026-11-06T23:00:00Z")
+        clock.set(berlinMidnight.minusNanos(1))
+        val hold = createdHold(hold(8))
+        val payload = bookingPayload(hold.holdId)
+        val futureDate = payload + ("birthDate" to "2026-11-08")
+        val rejected = book(8, futureDate)
+        assertEquals(400, rejected.statusCode(), rejected.body())
+        assertEquals("Birth date cannot be in the future.", json.readTree(rejected.body()).required("detail").stringValue())
+        assertEquals(409, book(8, futureDate + ("holdId" to UUID.randomUUID().toString())).statusCode())
+        assertSeatStatus(8, "HELD")
+
+        val corrected = json.writeValueAsString(payload + ("birthDate" to "2026-11-07"))
+        val confirmed = withSeatLocked(8) {
+            val pending = client.sendAsync(bookingRequest(8, corrected), HttpResponse.BodyHandlers.ofString())
+            awaitSeatLockWaiters(1)
+            clock.set(berlinMidnight)
+            pending
+        }.get(10, TimeUnit.SECONDS)
+        val created = bookingId(confirmed, 201)
+        assertEquals("2026-11-07", storedBooking(8)["birth_date"].toString())
+        assertEquals(created, bookingId(book(8, futureDate), 200))
     }
 
     @Test
@@ -400,6 +478,36 @@ class BookingHttpTests {
         @Primary
         fun controlledClock(): ControlledClock =
             ControlledClock(AtomicReference(Instant.EPOCH), ZoneOffset.UTC)
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class SeatMapProbeConfiguration {
+        @Bean
+        @Primary
+        fun seatMapProbe(@Qualifier("jdbcSeatMapReader") delegate: SeatMapReader): SeatMapProbe =
+            SeatMapProbe(delegate)
+    }
+
+    class SeatMapProbe(private val delegate: SeatMapReader) : SeatMapReader {
+        private val interceptor =
+            AtomicReference<((List<SeatAvailabilitySnapshot>) -> List<SeatAvailabilitySnapshot>)?>()
+
+        fun <T> interceptReads(
+            transform: (List<SeatAvailabilitySnapshot>) -> List<SeatAvailabilitySnapshot>,
+            read: () -> T,
+        ): T {
+            check(interceptor.compareAndSet(null, transform))
+            return try {
+                read()
+            } finally {
+                interceptor.set(null)
+            }
+        }
+
+        override fun findSeats(showingId: Long): List<SeatAvailabilitySnapshot>? {
+            val seats = delegate.findSeats(showingId) ?: return null
+            return interceptor.get()?.invoke(seats) ?: seats
+        }
     }
 
     class ControlledClock(private val now: AtomicReference<Instant>, private val timeZone: ZoneId) : Clock() {

@@ -1,7 +1,9 @@
 package de.holisticon.cinema.booking.adapter.inbound.web
 
 import de.holisticon.cinema.booking.application.SeatNotFound
+import de.holisticon.cinema.booking.application.query.SeatMapTemporarilyUnavailable
 import de.holisticon.cinema.booking.application.query.ShowingNotFound
+import de.holisticon.cinema.booking.domain.BirthDateInFuture
 import de.holisticon.cinema.booking.domain.HoldNotConfirmable
 import de.holisticon.cinema.booking.domain.RequiredConsentsMissing
 import de.holisticon.cinema.booking.domain.SeatAlreadyBooked
@@ -21,6 +23,14 @@ class ApiExceptionHandler {
     @ExceptionHandler(SeatNotFound::class, ShowingNotFound::class)
     fun notFound(error: RuntimeException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, error.message.orEmpty())
+
+    @ExceptionHandler(SeatMapTemporarilyUnavailable::class)
+    fun temporarilyUnavailable(error: SeatMapTemporarilyUnavailable): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, error.message.orEmpty())
+
+    @ExceptionHandler(BirthDateInFuture::class)
+    fun futureBirthDate(error: BirthDateInFuture): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, error.message.orEmpty())
 
     @ExceptionHandler(
         InvalidBookingRequest::class,

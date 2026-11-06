@@ -52,6 +52,8 @@ class BookingController(
     fun seatMap(@PathVariable showingId: Long): SeatMapView = getSeatMap.get(showingId)
 }
 
-data class SeatHoldResponse(val holdId: UUID, val expiresAt: Instant)
+data class SeatHoldResponse(val holdId: UUID, val expiresAt: Instant) {
+    override fun toString(): String = "SeatHoldResponse(expiresAt=$expiresAt)"
+}
 
 data class BookingResponse(val bookingId: UUID)
