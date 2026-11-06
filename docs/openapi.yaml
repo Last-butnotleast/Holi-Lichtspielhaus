@@ -137,6 +137,197 @@ paths:
       summary: List showings in start-time order
       tags:
       - showings-controller
+  /showings/{showingId}/bookings:
+    post:
+      operationId: confirmSeatGroupBooking
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmBookingRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+          description: The group was already confirmed. Returns its original booking
+            ID.
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+          description: The group booking was created.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The path or booking request is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or hold does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: "The hold expired, was released, or is unavailable."
+      summary: Confirm every seat in a held group
+      tags:
+      - seat-hold-group-controller
+  /showings/{showingId}/holds:
+    post:
+      operationId: reserveSeatGroup
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReserveSeatGroupRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldGroupResponse"
+          description: All selected seats are held.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing ID or seat selection is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or a selected seat does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: At least one selected seat is held or booked.
+      summary: Hold every selected seat together for five minutes
+      tags:
+      - seat-hold-group-controller
+  /showings/{showingId}/holds/release:
+    post:
+      operationId: releaseSeatGroup
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatHoldCredentialRequest"
+        required: true
+      responses:
+        "204":
+          description: The group is released. Repeat requests are safe.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing ID or hold credential is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or hold does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The group has already been booked.
+      summary: Release the seats still held by a group
+      tags:
+      - seat-hold-group-controller
+  /showings/{showingId}/holds/status:
+    post:
+      operationId: getSeatGroupHold
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatHoldCredentialRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldGroupResponse"
+          description: The live hold or confirmed booking receipt.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing ID or hold credential is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or hold does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The hold expired or was released.
+      summary: Resume a live hold or recover a confirmed booking receipt
+      tags:
+      - seat-hold-group-controller
   /showings/{showingId}/seats:
     get:
       operationId: getSeatMap
@@ -195,47 +386,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                birthDate:
-                  type: string
-                  format: date
-                  description: "For a new booking, this date must be on or before\
-                    \ the current date in Europe/Berlin."
-                email:
-                  type: string
-                  format: email
-                  maxLength: 254
-                holdId:
-                  type: string
-                  format: uuid
-                name:
-                  type: string
-                  maxLength: 200
-                  minLength: 1
-                newsletterOptIn:
-                  type:
-                  - boolean
-                  - "null"
-                  description: Defaults to false when omitted or null.
-                phone:
-                  type:
-                  - string
-                  - "null"
-                  maxLength: 50
-                privacyAccepted:
-                  type: boolean
-                  const: true
-                termsAccepted:
-                  type: boolean
-                  const: true
-              required:
-              - birthDate
-              - email
-              - holdId
-              - name
-              - privacyAccepted
-              - termsAccepted
+              $ref: "#/components/schemas/ConfirmBookingRequest"
         required: true
       responses:
         "200":
@@ -337,6 +488,48 @@ components:
           format: uuid
       required:
       - bookingId
+    ConfirmBookingRequest:
+      type: object
+      properties:
+        birthDate:
+          type: string
+          format: date
+          description: "For a new booking, this date must be on or before the current\
+            \ date in Europe/Berlin."
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        holdId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 200
+          minLength: 1
+        newsletterOptIn:
+          type:
+          - boolean
+          - "null"
+          description: Defaults to false when omitted or null.
+        phone:
+          type:
+          - string
+          - "null"
+          maxLength: 50
+        privacyAccepted:
+          type: boolean
+          const: true
+        termsAccepted:
+          type: boolean
+          const: true
+      required:
+      - birthDate
+      - email
+      - holdId
+      - name
+      - privacyAccepted
+      - termsAccepted
     ProblemDetail:
       type: object
       properties:
@@ -356,6 +549,51 @@ components:
         type:
           type: string
           format: uri
+    ReserveSeatGroupRequest:
+      type: object
+      properties:
+        seatIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+            minimum: 1
+          minItems: 1
+          uniqueItems: true
+      required:
+      - seatIds
+    SeatHoldCredentialRequest:
+      type: object
+      properties:
+        holdId:
+          type: string
+          format: uuid
+      required:
+      - holdId
+    SeatHoldGroupResponse:
+      type: object
+      properties:
+        bookingId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        holdId:
+          type: string
+          format: uuid
+        seatIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+      required:
+      - bookingId
+      - expiresAt
+      - holdId
+      - seatIds
     SeatHoldResponse:
       type: object
       properties:

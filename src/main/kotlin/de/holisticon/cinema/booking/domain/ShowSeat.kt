@@ -33,6 +33,13 @@ class ShowSeat(
         return newHold
     }
 
+    fun release(holdId: UUID): Boolean {
+        if (booking != null || hold?.id != holdId) return false
+
+        hold = null
+        return true
+    }
+
     fun confirm(holdId: UUID, bookingId: UUID, customer: CustomerDetails, now: Instant): BookingConfirmation {
         booking?.let { confirmed ->
             if (confirmed.holdId == holdId) {

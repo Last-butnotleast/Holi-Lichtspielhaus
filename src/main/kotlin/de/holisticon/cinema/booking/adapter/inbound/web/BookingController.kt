@@ -8,7 +8,6 @@ import de.holisticon.cinema.booking.domain.BookingConfirmation
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
-import io.swagger.v3.oas.annotations.media.SchemaProperty
 import io.swagger.v3.oas.annotations.parameters.RequestBody as OpenApiRequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import jakarta.validation.Validator
@@ -67,30 +66,7 @@ class BookingController(
         summary = "Confirm a held seat",
         requestBody = OpenApiRequestBody(
             required = true,
-            content = [Content(
-                mediaType = APPLICATION_JSON_VALUE,
-                schema = Schema(
-                    type = "object",
-                    requiredProperties = ["holdId", "name", "birthDate", "email", "termsAccepted", "privacyAccepted"],
-                ),
-                schemaProperties = [
-                    SchemaProperty(name = "holdId", schema = Schema(type = "string", format = "uuid")),
-                    SchemaProperty(name = "name", schema = Schema(type = "string", minLength = 1, maxLength = 200)),
-                    SchemaProperty(name = "birthDate", schema = Schema(
-                        type = "string",
-                        format = "date",
-                        description = "For a new booking, this date must be on or before the current date in Europe/Berlin.",
-                    )),
-                    SchemaProperty(name = "email", schema = Schema(type = "string", format = "email", maxLength = 254)),
-                    SchemaProperty(name = "phone", schema = Schema(types = ["string", "null"], maxLength = 50)),
-                    SchemaProperty(name = "termsAccepted", schema = Schema(type = "boolean", _const = "true")),
-                    SchemaProperty(name = "privacyAccepted", schema = Schema(type = "boolean", _const = "true")),
-                    SchemaProperty(name = "newsletterOptIn", schema = Schema(
-                        types = ["boolean", "null"],
-                        description = "Defaults to false when omitted or null.",
-                    )),
-                ],
-            )],
+            content = [Content(mediaType = APPLICATION_JSON_VALUE, schema = Schema(ref = CONFIRM_BOOKING_SCHEMA_REF))],
         ),
         responses = [
             ApiResponse(responseCode = "200", description = "The hold was already confirmed. Returns its original booking ID.",
@@ -115,12 +91,7 @@ class BookingController(
         @RequestBody request: ConfirmBookingRequest,
     ): ResponseEntity<BookingResponse> {
         val customer = request.validatedCustomerDetails(validator)
-        val confirmation = confirmBooking.confirm(showingId, seatId, request.holdId, customer)
-        val status = when (confirmation) {
-            is BookingConfirmation.Created -> HttpStatus.CREATED
-            is BookingConfirmation.Replayed -> HttpStatus.OK
-        }
-        return ResponseEntity.status(status).body(BookingResponse(confirmation.bookingId))
+        return confirmBooking.confirm(showingId, seatId, request.holdId, customer).toHttpResponse()
     }
 
     @Operation(
@@ -146,3 +117,11 @@ data class SeatHoldResponse(val holdId: UUID, val expiresAt: Instant) {
 }
 
 data class BookingResponse(val bookingId: UUID)
+
+internal fun BookingConfirmation.toHttpResponse(): ResponseEntity<BookingResponse> {
+    val status = when (this) {
+        is BookingConfirmation.Created -> HttpStatus.CREATED
+        is BookingConfirmation.Replayed -> HttpStatus.OK
+    }
+    return ResponseEntity.status(status).body(BookingResponse(bookingId))
+}

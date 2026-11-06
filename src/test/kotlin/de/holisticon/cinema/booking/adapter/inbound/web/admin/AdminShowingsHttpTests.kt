@@ -184,6 +184,32 @@ class AdminShowingsHttpTests {
         assertEquals("BOOKED", bookedSeat.required("status").stringValue())
     }
 
+    @Test
+    fun `a showing with expired and released groups can be deleted`() {
+        clock.set(Instant.parse("2026-11-06T12:00:00Z"))
+        val showingId = createShowing("Group cleanup").required("showingId").longValue()
+        val expired = holdGroup(showingId, listOf(1, 2))
+        val released = holdGroup(showingId, listOf(3, 4))
+        val delete = adminRequest("DELETE", "$ADMIN_SHOWINGS/$showingId")
+        assertEquals(409, send(delete).statusCode())
+
+        val releaseBody = json.writeValueAsString(mapOf("holdId" to released.required("holdId").stringValue()))
+        assertEquals(204, send(adminRequest("POST", "/showings/$showingId/holds/release", releaseBody, token = null)).statusCode())
+        clock.set(Instant.parse(expired.required("expiresAt").stringValue()))
+        assertEquals(204, send(delete).statusCode())
+        assertEquals(
+            0L,
+            jdbc.sql("select count(*) from seat_hold_groups where showing_id = :showingId")
+                .param("showingId", showingId).query(Long::class.javaObjectType).single(),
+        )
+    }
+
+    private fun holdGroup(showingId: Long, seatIds: List<Int>): JsonNode =
+        readJson(
+            send(adminRequest("POST", "/showings/$showingId/holds", json.writeValueAsString(mapOf("seatIds" to seatIds)), token = null)),
+            201,
+        )
+
     private fun awaitAdminSeatLock() {
         val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
         dataSource.connection.use { observer ->

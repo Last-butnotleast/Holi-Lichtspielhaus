@@ -35,7 +35,7 @@ class ConfirmBookingRequest private constructor(
             if (!body.isObject) throw InvalidBookingRequest()
 
             return ConfirmBookingRequest(
-                holdId = parseHoldId(body.requiredText("holdId")),
+                holdId = body.requiredHoldId(),
                 name = body.requiredText("name"),
                 birthDate = parseBirthDate(body.requiredText("birthDate")),
                 email = body.requiredText("email"),
@@ -44,16 +44,6 @@ class ConfirmBookingRequest private constructor(
                 privacyAccepted = body.booleanOrNull("privacyAccepted") ?: throw InvalidBookingRequest(),
                 newsletterOptIn = body.booleanOrNull("newsletterOptIn") ?: false,
             )
-        }
-
-        private fun parseHoldId(value: String): UUID {
-            val id = try {
-                UUID.fromString(value)
-            } catch (_: IllegalArgumentException) {
-                throw InvalidBookingRequest()
-            }
-            if (!id.toString().equals(value, ignoreCase = true)) throw InvalidBookingRequest()
-            return id
         }
 
         private fun parseBirthDate(value: String): LocalDate {
@@ -65,6 +55,17 @@ class ConfirmBookingRequest private constructor(
             }
         }
     }
+}
+
+internal fun JsonNode.requiredHoldId(): UUID {
+    val value = requiredText("holdId")
+    val id = try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        throw InvalidBookingRequest()
+    }
+    if (!id.toString().equals(value, ignoreCase = true)) throw InvalidBookingRequest()
+    return id
 }
 
 private fun JsonNode.requiredText(field: String): String = textOrNull(field) ?: throw InvalidBookingRequest()

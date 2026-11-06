@@ -56,6 +56,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/showings/{showingId}/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm every seat in a held group */
+        post: operations["confirmSeatGroupBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/showings/{showingId}/holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hold every selected seat together for five minutes */
+        post: operations["reserveSeatGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/showings/{showingId}/holds/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Release the seats still held by a group */
+        post: operations["releaseSeatGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/showings/{showingId}/holds/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume a live hold or recover a confirmed booking receipt */
+        post: operations["getSeatGroupHold"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/showings/{showingId}/seats": {
         parameters: {
             query?: never;
@@ -115,6 +183,25 @@ export interface components {
             /** Format: uuid */
             bookingId: string;
         };
+        ConfirmBookingRequest: {
+            /**
+             * Format: date
+             * @description For a new booking, this date must be on or before the current date in Europe/Berlin.
+             */
+            birthDate: string;
+            /** Format: email */
+            email: string;
+            /** Format: uuid */
+            holdId: string;
+            name: string;
+            /** @description Defaults to false when omitted or null. */
+            newsletterOptIn?: boolean | null;
+            phone?: string | null;
+            /** @constant */
+            privacyAccepted: true;
+            /** @constant */
+            termsAccepted: true;
+        };
         ProblemDetail: {
             detail?: string;
             /** Format: uri */
@@ -127,6 +214,22 @@ export interface components {
             title?: string;
             /** Format: uri */
             type?: string;
+        };
+        ReserveSeatGroupRequest: {
+            seatIds: number[];
+        };
+        SeatHoldCredentialRequest: {
+            /** Format: uuid */
+            holdId: string;
+        };
+        SeatHoldGroupResponse: {
+            /** Format: uuid */
+            bookingId: string | null;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: uuid */
+            holdId: string;
+            seatIds: number[];
         };
         SeatHoldResponse: {
             /** Format: date-time */
@@ -336,6 +439,229 @@ export interface operations {
             };
         };
     };
+    confirmSeatGroupBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                showingId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmBookingRequest"];
+            };
+        };
+        responses: {
+            /** @description The group was already confirmed. Returns its original booking ID. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingResponse"];
+                };
+            };
+            /** @description The group booking was created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingResponse"];
+                };
+            };
+            /** @description The path or booking request is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The showing or hold does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The hold expired, was released, or is unavailable. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reserveSeatGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                showingId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReserveSeatGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description All selected seats are held. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeatHoldGroupResponse"];
+                };
+            };
+            /** @description The showing ID or seat selection is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The showing or a selected seat does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description At least one selected seat is held or booked. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    releaseSeatGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                showingId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeatHoldCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description The group is released. Repeat requests are safe. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The showing ID or hold credential is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The showing or hold does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The group has already been booked. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getSeatGroupHold: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                showingId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeatHoldCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description The live hold or confirmed booking receipt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeatHoldGroupResponse"];
+                };
+            };
+            /** @description The showing ID or hold credential is invalid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The showing or hold does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description The hold expired or was released. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     getSeatMap: {
         parameters: {
             query?: never;
@@ -397,25 +723,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /**
-                     * Format: date
-                     * @description For a new booking, this date must be on or before the current date in Europe/Berlin.
-                     */
-                    birthDate: string;
-                    /** Format: email */
-                    email: string;
-                    /** Format: uuid */
-                    holdId: string;
-                    name: string;
-                    /** @description Defaults to false when omitted or null. */
-                    newsletterOptIn?: boolean | null;
-                    phone?: string | null;
-                    /** @constant */
-                    privacyAccepted: true;
-                    /** @constant */
-                    termsAccepted: true;
-                };
+                "application/json": components["schemas"]["ConfirmBookingRequest"];
             };
         };
         responses: {

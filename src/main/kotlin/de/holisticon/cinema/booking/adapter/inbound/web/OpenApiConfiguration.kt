@@ -7,7 +7,11 @@ import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.headers.Header
 import io.swagger.v3.oas.models.info.Info
+import io.swagger.v3.oas.models.media.BooleanSchema
+import io.swagger.v3.oas.models.media.ObjectSchema
+import io.swagger.v3.oas.models.media.Schema
 import io.swagger.v3.oas.models.media.StringSchema
+import io.swagger.v3.oas.models.media.UUIDSchema
 import io.swagger.v3.oas.models.responses.ApiResponse
 import io.swagger.v3.oas.models.security.SecurityScheme
 import io.swagger.v3.oas.models.servers.Server
@@ -18,6 +22,8 @@ import org.springframework.http.HttpHeaders
 
 internal const val ADMIN_BEARER_SECURITY = "adminBearer"
 internal const val ADMIN_UNAUTHORIZED_RESPONSE = "#/components/responses/AdminUnauthorized"
+private const val CONFIRM_BOOKING_SCHEMA_NAME = "ConfirmBookingRequest"
+internal const val CONFIRM_BOOKING_SCHEMA_REF = "#/components/schemas/$CONFIRM_BOOKING_SCHEMA_NAME"
 
 @Configuration(proxyBeanMethods = false)
 class OpenApiConfiguration {
@@ -27,6 +33,7 @@ class OpenApiConfiguration {
         .servers(listOf(Server().url("/")))
         .components(
             Components()
+                .addSchemas(CONFIRM_BOOKING_SCHEMA_NAME, confirmBookingRequestSchema())
                 .addSecuritySchemes(
                     ADMIN_BEARER_SECURITY,
                     SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer"),
@@ -46,6 +53,12 @@ class OpenApiConfiguration {
         val requiredFields = mapOf(
             BookingResponse::class.java.simpleName to listOf(BookingResponse::bookingId.name),
             SeatHoldResponse::class.java.simpleName to listOf(SeatHoldResponse::holdId.name, SeatHoldResponse::expiresAt.name),
+            SeatHoldGroupResponse::class.java.simpleName to listOf(
+                SeatHoldGroupResponse::holdId.name,
+                SeatHoldGroupResponse::seatIds.name,
+                SeatHoldGroupResponse::expiresAt.name,
+                SeatHoldGroupResponse::bookingId.name,
+            ),
             SeatMapView::class.java.simpleName to listOf(SeatMapView::showingId.name, SeatMapView::seats.name),
             SeatView::class.java.simpleName to listOf(SeatView::seatId.name, SeatView::status.name),
             ShowingView::class.java.simpleName to listOf(
@@ -57,4 +70,22 @@ class OpenApiConfiguration {
         val schemas = api.components.schemas
         requiredFields.forEach { (name, fields) -> schemas.getValue(name).required = fields }
     }
+
+    private fun confirmBookingRequestSchema(): Schema<*> = ObjectSchema()
+        .required(listOf("holdId", "name", "birthDate", "email", "termsAccepted", "privacyAccepted"))
+        .addProperty("holdId", UUIDSchema())
+        .addProperty("name", StringSchema().minLength(1).maxLength(200))
+        .addProperty(
+            "birthDate",
+            StringSchema().format("date")
+                .description("For a new booking, this date must be on or before the current date in Europe/Berlin."),
+        )
+        .addProperty("email", StringSchema().format("email").maxLength(254))
+        .addProperty("phone", Schema<String>().types(setOf("string", "null")).maxLength(50))
+        .addProperty("termsAccepted", BooleanSchema()._const(true))
+        .addProperty("privacyAccepted", BooleanSchema()._const(true))
+        .addProperty(
+            "newsletterOptIn",
+            Schema<Boolean>().types(setOf("boolean", "null")).description("Defaults to false when omitted or null."),
+        )
 }

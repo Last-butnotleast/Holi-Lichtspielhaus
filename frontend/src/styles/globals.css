@@ -29,25 +29,25 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: var(--background);
+  --background: #f7f1e6;
+  --foreground: #2b211d;
+  --card: #fffcf5;
   --card-foreground: var(--foreground);
-  --popover: var(--background);
+  --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: var(--primary);
+  --primary: #702b43;
+  --primary-foreground: #fff8eb;
+  --secondary: #efe4d1;
+  --secondary-foreground: #442e27;
   --muted: var(--secondary);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: var(--secondary);
-  --accent-foreground: var(--primary);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: var(--border);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+  --muted-foreground: #6d574c;
+  --accent: #f5dfb3;
+  --accent-foreground: #532738;
+  --destructive: #a52b3f;
+  --border: #ddcbb6;
+  --input: #9c7f70;
+  --ring: #8a4960;
+  --radius: 0.75rem;
 }
 
 @layer base {

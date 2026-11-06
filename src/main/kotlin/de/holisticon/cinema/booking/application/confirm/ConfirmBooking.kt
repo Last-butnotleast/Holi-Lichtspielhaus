@@ -1,8 +1,10 @@
 package de.holisticon.cinema.booking.application.confirm
 
 import de.holisticon.cinema.booking.application.SeatNotFound
+import de.holisticon.cinema.booking.application.port.SeatHoldGroupRepository
 import de.holisticon.cinema.booking.domain.BookingConfirmation
 import de.holisticon.cinema.booking.domain.CustomerDetails
+import de.holisticon.cinema.booking.domain.HoldNotConfirmable
 import de.holisticon.cinema.booking.domain.ShowSeatRepository
 import java.time.Clock
 import java.time.temporal.ChronoUnit
@@ -11,10 +13,17 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 @Service
-class ConfirmBooking(private val seats: ShowSeatRepository, private val clock: Clock) {
+class ConfirmBooking(
+    private val seats: ShowSeatRepository,
+    private val groups: SeatHoldGroupRepository,
+    private val clock: Clock,
+) {
     @Transactional
     fun confirm(showingId: Long, seatId: Long, holdId: UUID, customer: CustomerDetails): BookingConfirmation {
         val seat = seats.findForUpdate(showingId, seatId) ?: throw SeatNotFound(showingId, seatId)
+        if ((seat.hold?.id == holdId || seat.booking?.holdId == holdId) && groups.isMemberHold(holdId)) {
+            throw HoldNotConfirmable(showingId, seatId)
+        }
         val now = clock.instant().truncatedTo(ChronoUnit.MICROS)
         val confirmation = seat.confirm(holdId, UUID.randomUUID(), customer, now)
         if (confirmation is BookingConfirmation.Created) {
