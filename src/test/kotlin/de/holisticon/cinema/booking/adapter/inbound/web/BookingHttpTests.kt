@@ -1,6 +1,7 @@
 package de.holisticon.cinema.booking.adapter.inbound.web
 
 import de.holisticon.cinema.TestcontainersConfiguration
+import de.holisticon.cinema.booking.application.query.ShowingView
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -47,6 +48,44 @@ class BookingHttpTests {
 
     private val client = HttpClient.newHttpClient()
     private val json = JsonMapper.builder().build()
+
+    @Test
+    fun `the programme lists films and showtimes in chronological order`() {
+        assertEquals(
+            listOf(
+                ShowingView(2, "The Lantern House", Instant.parse("2027-01-15T15:00:00Z")),
+                ShowingView(1, "Cinema Preview", Instant.parse("2027-01-15T18:30:00Z")),
+                ShowingView(3, "Cinema Preview", Instant.parse("2027-01-16T18:30:00Z")),
+            ),
+            programme(),
+        )
+
+        jdbc.sql(
+            """
+            insert into showings (id, movie_title, starts_at)
+            select 0, movie_title, starts_at from showings where id = 1
+            """.trimIndent(),
+        ).update()
+        try {
+            assertEquals(listOf(2L, 0L, 1L, 3L), programme().map { it.showingId })
+        } finally {
+            jdbc.sql("delete from showings where id = 0").update()
+        }
+    }
+
+    @Test
+    fun `each new showing in the programme has its own reservable seats`() {
+        clock.set(Instant.parse("2026-11-06T11:00:00Z"))
+        val showingIds = programme().map { it.showingId }.filter { it != 1L }
+        assertEquals(listOf(2L, 3L), showingIds)
+
+        val holds = showingIds.map { showingId ->
+            assertSeatStatus(1, "AVAILABLE", showingId)
+            createdHold(hold(1, showingId))
+        }
+        assertNotEquals(holds[0].holdId, holds[1].holdId)
+        showingIds.forEach { assertSeatStatus(1, "HELD", it) }
+    }
 
     @Test
     fun `only one contender can hold a seat when the previous hold expires during the lock wait`() {
@@ -324,11 +363,26 @@ class BookingHttpTests {
         )
     }
 
-    private fun assertSeatStatus(seatId: Long, expectedStatus: String) {
-        val response = get("/showings/1/seats")
+    private fun programme(): List<ShowingView> {
+        val response = get("/showings")
+        assertEquals(200, response.statusCode(), response.body())
+        val showings = json.readTree(response.body())
+        assertTrue(showings.isArray)
+        return showings.values().map { showing ->
+            assertEquals(3, showing.size())
+            ShowingView(
+                showingId = showing.required("showingId").longValue(),
+                movieTitle = showing.required("movieTitle").stringValue(),
+                startsAt = Instant.parse(showing.required("startsAt").stringValue()),
+            )
+        }
+    }
+
+    private fun assertSeatStatus(seatId: Long, expectedStatus: String, showingId: Long = 1) {
+        val response = get("/showings/$showingId/seats")
         assertEquals(200, response.statusCode(), response.body())
         val seatMap = json.readTree(response.body())
-        assertEquals(1L, seatMap.required("showingId").longValue())
+        assertEquals(showingId, seatMap.required("showingId").longValue())
         val seatArray = seatMap.required("seats")
         assertTrue(seatArray.isArray)
         val seats = seatArray.values()
