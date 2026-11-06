@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.sql.DataSource
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -59,6 +60,77 @@ class BookingHttpTests {
 
     private val client = HttpClient.newHttpClient()
     private val json = JsonMapper.builder().build()
+
+    @Test
+    fun `the generated API contract describes booking and admin operations`() {
+        val response = get("/v3/api-docs")
+        assertEquals(200, response.statusCode(), response.body())
+        val spec = json.readTree(response.body())
+        assertEquals("/", spec.at("/servers/0/url").stringValue())
+        val operations = spec.required("paths").properties().flatMap { (path, methods) ->
+            methods.properties().map { (method, operation) -> "$method $path" to operation }
+        }.toMap()
+        assertEquals(
+            mapOf(
+                "get /showings" to "listShowings",
+                "get /showings/{showingId}/seats" to "getSeatMap",
+                "post /showings/{showingId}/seats/{seatId}/holds" to "reserveSeat",
+                "post /showings/{showingId}/seats/{seatId}/bookings" to "confirmBooking",
+                "post /admin/showings" to "createShowing",
+                "put /admin/showings/{showingId}" to "updateShowing",
+                "delete /admin/showings/{showingId}" to "deleteShowing",
+            ),
+            operations.mapValues { (_, operation) -> operation.required("operationId").stringValue() },
+        )
+
+        val booking = operations.getValue("post /showings/{showingId}/seats/{seatId}/bookings")
+        val request = booking.at("/requestBody/content/application~1json/schema")
+        val required = setOf("holdId", "name", "birthDate", "email", "termsAccepted", "privacyAccepted")
+        assertEquals(required, request.required("required").values().map { it.stringValue() }.toSet())
+        assertEquals(required + setOf("phone", "newsletterOptIn"), request.required("properties").propertyNames().toSet())
+        assertEquals("uuid", request.at("/properties/holdId/format").stringValue())
+        assertEquals("date", request.at("/properties/birthDate/format").stringValue())
+        for (consent in listOf("termsAccepted", "privacyAccepted")) {
+            val property = request.at("/properties/$consent")
+            assertEquals("boolean", property.required("type").stringValue())
+            assertEquals(json.readTree("true"), property.required("const"))
+        }
+        assertEquals(setOf("string", "null"), request.at("/properties/phone/type").values().map { it.stringValue() }.toSet())
+        assertEquals(setOf("boolean", "null"), request.at("/properties/newsletterOptIn/type").values().map { it.stringValue() }.toSet())
+        assertEquals(setOf("200", "201", "400", "404", "409"), booking.required("responses").propertyNames().toSet())
+        val seatMap = operations.getValue("get /showings/{showingId}/seats")
+        assertTrue(seatMap.at("/responses/503/content").has("application/problem+json"))
+
+        val responseSchemas = spec.at("/components/schemas")
+        val requiredResponseFields = mapOf(
+            "BookingResponse" to setOf("bookingId"),
+            "SeatHoldResponse" to setOf("holdId", "expiresAt"),
+            "SeatMapView" to setOf("showingId", "seats"),
+            "SeatView" to setOf("seatId", "status"),
+            "ShowingView" to setOf("showingId", "movieTitle", "startsAt"),
+        )
+        for ((name, fields) in requiredResponseFields) {
+            val schema = responseSchemas.required(name)
+            assertEquals(fields, schema.required("required").values().map { it.stringValue() }.toSet(), name)
+        }
+
+        for ((route, operation) in operations) {
+            if ("/admin/" in route) {
+                assertEquals(setOf("adminBearer"), operation.at("/security/0").propertyNames().toSet())
+                assertEquals("#/components/responses/AdminUnauthorized", operation.at("/responses/401/\$ref").stringValue())
+            } else {
+                assertFalse(operation.has("security"))
+            }
+        }
+        val bearer = spec.at("/components/securitySchemes/adminBearer")
+        assertEquals("http", bearer.required("type").stringValue())
+        assertEquals("bearer", bearer.required("scheme").stringValue())
+        assertFalse(bearer.has("bearerFormat"))
+        val unauthorized = spec.at("/components/responses/AdminUnauthorized")
+        assertTrue(unauthorized.required("headers").has("WWW-Authenticate"))
+        assertFalse(unauthorized.has("content"))
+        assertFalse(operations.getValue("delete /admin/showings/{showingId}").at("/responses/204").has("content"))
+    }
 
     @Test
     fun `the programme lists films and showtimes in chronological order`() {

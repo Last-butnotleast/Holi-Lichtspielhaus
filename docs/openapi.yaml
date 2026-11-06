@@ -1,0 +1,430 @@
+openapi: 3.1.0
+info:
+  title: Cinema Booking API
+  version: 1.0.0
+servers:
+- url: /
+paths:
+  /admin/showings:
+    post:
+      operationId: createShowing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShowingRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShowingView"
+          description: The showing was created.
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing request is invalid.
+        "401":
+          $ref: "#/components/responses/AdminUnauthorized"
+      security:
+      - adminBearer: []
+      summary: Create a showing and its 200 seats
+      tags:
+      - admin-showings-controller
+  /admin/showings/{showingId}:
+    delete:
+      operationId: deleteShowing
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "204":
+          description: The showing was deleted.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+          description: The showing ID is invalid.
+        "401":
+          $ref: "#/components/responses/AdminUnauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing has active holds or confirmed bookings.
+      security:
+      - adminBearer: []
+      summary: Delete a showing without active holds or bookings
+      tags:
+      - admin-showings-controller
+    put:
+      operationId: updateShowing
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShowingRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShowingView"
+          description: The showing was updated.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The path or showing request is invalid.
+        "401":
+          $ref: "#/components/responses/AdminUnauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing has active holds or confirmed bookings.
+      security:
+      - adminBearer: []
+      summary: Update a showing without active holds or bookings
+      tags:
+      - admin-showings-controller
+  /showings:
+    get:
+      operationId: listShowings
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShowingView"
+          description: "Showings ordered by start time, then showing ID."
+      summary: List showings in start-time order
+      tags:
+      - showings-controller
+  /showings/{showingId}/seats:
+    get:
+      operationId: getSeatMap
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatMapView"
+          description: The current seat map.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+          description: The showing ID is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing does not exist.
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: Seat availability is temporarily unavailable.
+      summary: Get the availability of seats for a showing
+      tags:
+      - booking-controller
+  /showings/{showingId}/seats/{seatId}/bookings:
+    post:
+      operationId: confirmBooking
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: seatId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                birthDate:
+                  type: string
+                  format: date
+                  description: "For a new booking, this date must be on or before\
+                    \ the current date in Europe/Berlin."
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                holdId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  maxLength: 200
+                  minLength: 1
+                newsletterOptIn:
+                  type:
+                  - boolean
+                  - "null"
+                  description: Defaults to false when omitted or null.
+                phone:
+                  type:
+                  - string
+                  - "null"
+                  maxLength: 50
+                privacyAccepted:
+                  type: boolean
+                  const: true
+                termsAccepted:
+                  type: boolean
+                  const: true
+              required:
+              - birthDate
+              - email
+              - holdId
+              - name
+              - privacyAccepted
+              - termsAccepted
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+          description: The hold was already confirmed. Returns its original booking
+            ID.
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingResponse"
+          description: The booking was created.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The path or booking request is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or seat does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: "The hold is invalid or expired, or the seat has another booking."
+      summary: Confirm a held seat
+      tags:
+      - booking-controller
+  /showings/{showingId}/seats/{seatId}/holds:
+    post:
+      operationId: reserveSeat
+      parameters:
+      - in: path
+        name: showingId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - in: path
+        name: seatId
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatHoldResponse"
+          description: The seat is held. Keep the hold ID for booking confirmation.
+        "400":
+          content:
+            application/json:
+              schema:
+                type: object
+          description: The showing or seat ID is invalid.
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The showing or seat does not exist.
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The seat is held or booked.
+      summary: Hold an available seat for five minutes
+      tags:
+      - booking-controller
+components:
+  responses:
+    AdminUnauthorized:
+      description: The admin bearer credential is absent or invalid.
+      headers:
+        WWW-Authenticate:
+          description: Bearer authentication challenge.
+          schema:
+            type: string
+  schemas:
+    BookingResponse:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+      required:
+      - bookingId
+    ProblemDetail:
+      type: object
+      properties:
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+        properties:
+          type: object
+          additionalProperties: {}
+        status:
+          type: integer
+          format: int32
+        title:
+          type: string
+        type:
+          type: string
+          format: uri
+    SeatHoldResponse:
+      type: object
+      properties:
+        expiresAt:
+          type: string
+          format: date-time
+        holdId:
+          type: string
+          format: uuid
+      required:
+      - expiresAt
+      - holdId
+    SeatMapView:
+      type: object
+      properties:
+        seats:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatView"
+        showingId:
+          type: integer
+          format: int64
+      required:
+      - seats
+      - showingId
+    SeatView:
+      type: object
+      properties:
+        seatId:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - AVAILABLE
+          - HELD
+          - BOOKED
+      required:
+      - seatId
+      - status
+    ShowingRequest:
+      type: object
+      properties:
+        movieTitle:
+          type: string
+          minLength: 1
+        startsAt:
+          type: string
+          format: date-time
+          description: Start time with an explicit offset.
+      required:
+      - movieTitle
+      - startsAt
+    ShowingView:
+      type: object
+      properties:
+        movieTitle:
+          type: string
+        showingId:
+          type: integer
+          format: int64
+        startsAt:
+          type: string
+          format: date-time
+      required:
+      - movieTitle
+      - showingId
+      - startsAt
+  securitySchemes:
+    adminBearer:
+      scheme: bearer
+      type: http
