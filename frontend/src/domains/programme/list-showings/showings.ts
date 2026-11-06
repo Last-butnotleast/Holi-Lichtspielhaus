@@ -5,6 +5,7 @@ export interface Showing {
   id: number
   movieTitle: string
   startsAt: string
+  revision: number
 }
 
 const showingTime = new Intl.DateTimeFormat('de-DE', {
@@ -27,10 +28,11 @@ export function useShowings() {
         throw new Error('Das Kinoprogramm konnte nicht geladen werden.')
       }
 
-      return data.map(({ showingId, movieTitle, startsAt }) => ({
+      return data.map(({ showingId, movieTitle, startsAt, revision }) => ({
         id: showingId,
         movieTitle,
         startsAt,
+        revision,
       }))
     },
     retry: 1,

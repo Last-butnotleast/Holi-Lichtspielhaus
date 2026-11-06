@@ -31,21 +31,21 @@ class SeatHoldGroupController(private val groups: ManageSeatHoldGroups, private 
         responses = [
             ApiResponse(responseCode = "201", description = "All selected seats are held.",
                 content = [Content(mediaType = APPLICATION_JSON_VALUE, schema = Schema(implementation = SeatHoldGroupResponse::class))]),
-            ApiResponse(responseCode = "400", description = "The showing ID or seat selection is invalid.",
+            ApiResponse(responseCode = "400", description = "The showing ID, expected showing revision, or seat selection is invalid.",
                 content = [
                     Content(mediaType = APPLICATION_JSON_VALUE, schema = Schema(type = "object")),
                     Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class)),
                 ]),
             ApiResponse(responseCode = "404", description = "The showing or a selected seat does not exist.",
                 content = [Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class))]),
-            ApiResponse(responseCode = "409", description = "At least one selected seat is held or booked.",
+            ApiResponse(responseCode = "409", description = "A selected seat is held or booked, or the showing changed (urn:cinema:problem:showing-changed).",
                 content = [Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class))]),
         ],
     )
     @PostMapping("/holds")
     @ResponseStatus(HttpStatus.CREATED)
     fun hold(@PathVariable showingId: Long, @RequestBody request: ReserveSeatGroupRequest): SeatHoldGroupResponse =
-        groups.reserve(showingId, request.seatIds).toResponse()
+        groups.reserve(showingId, request.seatIds, request.expectedShowingRevision).toResponse()
 
     @Operation(
         operationId = "getSeatGroupHold",

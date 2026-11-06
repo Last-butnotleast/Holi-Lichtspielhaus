@@ -222,7 +222,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-          description: The showing ID or seat selection is invalid.
+          description: "The showing ID, expected showing revision, or seat selection\
+            \ is invalid."
         "404":
           content:
             application/problem+json:
@@ -234,7 +235,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-          description: At least one selected seat is held or booked.
+          description: "A selected seat is held or booked, or the showing changed\
+            \ (urn:cinema:problem:showing-changed)."
       summary: Hold every selected seat together for five minutes
       tags:
       - seat-hold-group-controller
@@ -442,6 +444,12 @@ paths:
         schema:
           type: integer
           format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReserveSeatRequest"
+        required: true
       responses:
         "201":
           content:
@@ -454,7 +462,10 @@ paths:
             application/json:
               schema:
                 type: object
-          description: The showing or seat ID is invalid.
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetail"
+          description: The path or expected showing revision is invalid.
         "404":
           content:
             application/problem+json:
@@ -466,7 +477,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-          description: The seat is held or booked.
+          description: "The seat is held or booked, or the showing changed (urn:cinema:problem:showing-changed)."
       summary: Hold an available seat for five minutes
       tags:
       - booking-controller
@@ -537,7 +548,7 @@ components:
           type: string
         instance:
           type: string
-          format: uri
+          format: uri-reference
         properties:
           type: object
           additionalProperties: {}
@@ -552,6 +563,10 @@ components:
     ReserveSeatGroupRequest:
       type: object
       properties:
+        expectedShowingRevision:
+          type: integer
+          format: int32
+          minimum: 1
         seatIds:
           type: array
           items:
@@ -561,7 +576,17 @@ components:
           minItems: 1
           uniqueItems: true
       required:
+      - expectedShowingRevision
       - seatIds
+    ReserveSeatRequest:
+      type: object
+      properties:
+        expectedShowingRevision:
+          type: integer
+          format: int32
+          minimum: 1
+      required:
+      - expectedShowingRevision
     SeatHoldCredentialRequest:
       type: object
       properties:
@@ -652,6 +677,9 @@ components:
       properties:
         movieTitle:
           type: string
+        revision:
+          type: integer
+          format: int32
         showingId:
           type: integer
           format: int64
@@ -660,6 +688,7 @@ components:
           format: date-time
       required:
       - movieTitle
+      - revision
       - showingId
       - startsAt
   securitySchemes:

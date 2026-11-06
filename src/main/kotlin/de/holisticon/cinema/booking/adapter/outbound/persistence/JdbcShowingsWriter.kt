@@ -1,6 +1,7 @@
 package de.holisticon.cinema.booking.adapter.outbound.persistence
 
 import de.holisticon.cinema.booking.application.port.ShowingsWriter
+import de.holisticon.cinema.booking.application.query.ShowingView
 import java.time.Instant
 import java.time.ZoneOffset
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -10,13 +11,13 @@ private const val SEATS_PER_SHOWING = 200
 
 @Repository
 class JdbcShowingsWriter(private val jdbc: JdbcClient) : ShowingsWriter {
-    override fun create(movieTitle: String, startsAt: Instant): Long {
-        val showingId = jdbc.sql(
-            "insert into showings (movie_title, starts_at) values (:title, :startsAt) returning id",
+    override fun create(movieTitle: String, startsAt: Instant): ShowingView {
+        val showing = jdbc.sql(
+            "insert into showings (movie_title, starts_at) values (:title, :startsAt) returning id, revision",
         )
             .param("title", movieTitle)
             .param("startsAt", startsAt.atOffset(ZoneOffset.UTC))
-            .query(Long::class.javaObjectType)
+            .query { row, _ -> ShowingView(row.getLong("id"), movieTitle, startsAt, row.getInt("revision")) }
             .single()
 
         jdbc.sql(
@@ -25,10 +26,10 @@ class JdbcShowingsWriter(private val jdbc: JdbcClient) : ShowingsWriter {
             select :showingId, seat_id from generate_series(1, :seatCount) as seats(seat_id)
             """.trimIndent(),
         )
-            .param("showingId", showingId)
+            .param("showingId", showing.showingId)
             .param("seatCount", SEATS_PER_SHOWING)
             .update()
-        return showingId
+        return showing
     }
 
     override fun lockShowingAndSeats(showingId: Long): Boolean {
@@ -60,13 +61,22 @@ class JdbcShowingsWriter(private val jdbc: JdbcClient) : ShowingsWriter {
             .query(Boolean::class.javaObjectType)
             .single()
 
-    override fun update(showingId: Long, movieTitle: String, startsAt: Instant) {
-        jdbc.sql("update showings set movie_title = :title, starts_at = :startsAt where id = :showingId")
+    override fun update(showingId: Long, movieTitle: String, startsAt: Instant): Int =
+        jdbc.sql(
+            """
+            update showings
+            set revision = case when movie_title = :title and starts_at = :startsAt then revision else revision + 1 end,
+                movie_title = :title,
+                starts_at = :startsAt
+            where id = :showingId
+            returning revision
+            """.trimIndent(),
+        )
             .param("title", movieTitle)
             .param("startsAt", startsAt.atOffset(ZoneOffset.UTC))
             .param("showingId", showingId)
-            .update()
-    }
+            .query(Int::class.javaObjectType)
+            .single()
 
     override fun delete(showingId: Long) {
         jdbc.sql("delete from show_seats where showing_id = :showingId").param("showingId", showingId).update()

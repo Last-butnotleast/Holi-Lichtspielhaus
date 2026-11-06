@@ -204,7 +204,7 @@ export interface components {
         };
         ProblemDetail: {
             detail?: string;
-            /** Format: uri */
+            /** Format: uri-reference */
             instance?: string;
             properties?: {
                 [key: string]: unknown;
@@ -216,7 +216,13 @@ export interface components {
             type?: string;
         };
         ReserveSeatGroupRequest: {
+            /** Format: int32 */
+            expectedShowingRevision: number;
             seatIds: number[];
+        };
+        ReserveSeatRequest: {
+            /** Format: int32 */
+            expectedShowingRevision: number;
         };
         SeatHoldCredentialRequest: {
             /** Format: uuid */
@@ -258,6 +264,8 @@ export interface components {
         };
         ShowingView: {
             movieTitle: string;
+            /** Format: int32 */
+            revision: number;
             /** Format: int64 */
             showingId: number;
             /** Format: date-time */
@@ -526,7 +534,7 @@ export interface operations {
                     "application/json": components["schemas"]["SeatHoldGroupResponse"];
                 };
             };
-            /** @description The showing ID or seat selection is invalid. */
+            /** @description The showing ID, expected showing revision, or seat selection is invalid. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -545,7 +553,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description At least one selected seat is held or booked. */
+            /** @description A selected seat is held or booked, or the showing changed (urn:cinema:problem:showing-changed). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -785,7 +793,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReserveSeatRequest"];
+            };
+        };
         responses: {
             /** @description The seat is held. Keep the hold ID for booking confirmation. */
             201: {
@@ -796,13 +808,14 @@ export interface operations {
                     "application/json": components["schemas"]["SeatHoldResponse"];
                 };
             };
-            /** @description The showing or seat ID is invalid. */
+            /** @description The path or expected showing revision is invalid. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": Record<string, never>;
+                    "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
             /** @description The showing or seat does not exist. */
@@ -814,7 +827,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description The seat is held or booked. */
+            /** @description The seat is held or booked, or the showing changed (urn:cinema:problem:showing-changed). */
             409: {
                 headers: {
                     [name: string]: unknown;

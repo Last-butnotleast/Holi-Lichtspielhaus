@@ -83,6 +83,7 @@ class AdminShowingsHttpTests {
         assertTrue(showingId > seededIds.max())
         assertEquals("Admin matinee", created.required("movieTitle").stringValue())
         assertEquals("2027-02-01T14:00:00.123456Z", created.required("startsAt").stringValue())
+        assertEquals(1, created.required("revision").intValue())
         assertEquals(created, showingInProgramme(showingId))
         assertTrue(programme().map { it.required("showingId").longValue() }.containsAll(seededIds))
 
@@ -98,7 +99,12 @@ class AdminShowingsHttpTests {
         assertEquals(showingId, updatedShowing.required("showingId").longValue())
         assertEquals("Admin evening", updatedShowing.required("movieTitle").stringValue())
         assertEquals("2027-02-01T18:00:00Z", updatedShowing.required("startsAt").stringValue())
+        assertEquals(2, updatedShowing.required("revision").intValue())
         assertEquals(updatedShowing, showingInProgramme(showingId))
+        assertEquals(
+            updatedShowing,
+            readJson(send(adminRequest("PUT", "$ADMIN_SHOWINGS/$showingId", showingBody("Admin evening", "2027-02-01T19:00:00+01:00"))), 200),
+        )
         assertEquals(seats, seatMap(showingId))
 
         val deleted = send(adminRequest("DELETE", "$ADMIN_SHOWINGS/$showingId"))
@@ -185,6 +191,66 @@ class AdminShowingsHttpTests {
     }
 
     @Test
+    fun `an admin edit winning the showing lock rejects both stale holds before allocating seats`() {
+        val showingId = createShowing("Before edit").required("showingId").longValue()
+        val singlePath = "/showings/$showingId/seats/1/holds"
+        val groupPath = "/showings/$showingId/holds"
+        val single = mapOf("expectedShowingRevision" to 1)
+        val group = single + ("seatIds" to listOf(2, 3))
+        val pending = checkNotNull(TransactionTemplate(transactionManager).execute {
+            lockFirstSeat(showingId)
+            val update = client.sendAsync(
+                adminRequest("PUT", "$ADMIN_SHOWINGS/$showingId", showingBody("After edit")),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+            awaitAdminSeatLock()
+            val holds = listOf(holdRequest(singlePath, single), holdRequest(groupPath, group)).map {
+                client.sendAsync(it, HttpResponse.BodyHandlers.ofString())
+            }
+            awaitLock("%select revision from showings%for key share%", expected = 2)
+            update to holds
+        })
+
+        val edited = readJson(pending.first.get(10, TimeUnit.SECONDS), 200)
+        val revision = edited.required("revision").intValue()
+        assertEquals(2, revision)
+        assertEquals(edited, showingInProgramme(showingId))
+        for (hold in pending.second) {
+            val conflict = readJson(hold.get(10, TimeUnit.SECONDS), 409)
+            assertEquals("urn:cinema:problem:showing-changed", conflict.required("type").stringValue())
+        }
+        assertTrue(seatMap(showingId).all { it.required("status").stringValue() == "AVAILABLE" })
+        assertEquals(201, send(holdRequest(singlePath, single + ("expectedShowingRevision" to revision))).statusCode())
+        assertEquals(201, send(holdRequest(groupPath, group + ("expectedShowingRevision" to revision))).statusCode())
+    }
+
+    @Test
+    fun `either hold winning the showing lock blocks a waiting admin edit`() {
+        for (group in listOf(false, true)) {
+            val original = createShowing("Hold wins")
+            val showingId = original.required("showingId").longValue()
+            val path = if (group) "/showings/$showingId/holds" else "/showings/$showingId/seats/1/holds"
+            val revision = mapOf("expectedShowingRevision" to original.required("revision").intValue())
+            val payload = if (group) revision + ("seatIds" to listOf(1, 2)) else revision
+            val pending = checkNotNull(TransactionTemplate(transactionManager).execute {
+                lockFirstSeat(showingId)
+                val hold = client.sendAsync(holdRequest(path, payload), HttpResponse.BodyHandlers.ofString())
+                awaitLock("%show_seats%for %")
+                val update = client.sendAsync(
+                    adminRequest("PUT", "$ADMIN_SHOWINGS/$showingId", showingBody("Must stay unchanged")),
+                    HttpResponse.BodyHandlers.ofString(),
+                )
+                awaitLock("%select id from showings%for update%")
+                hold to update
+            })
+
+            readJson(pending.first.get(10, TimeUnit.SECONDS), 201)
+            assertEquals(409, pending.second.get(10, TimeUnit.SECONDS).statusCode())
+            assertEquals(original, showingInProgramme(showingId))
+        }
+    }
+
+    @Test
     fun `a showing with expired and released groups can be deleted`() {
         clock.set(Instant.parse("2026-11-06T12:00:00Z"))
         val showingId = createShowing("Group cleanup").required("showingId").longValue()
@@ -206,33 +272,39 @@ class AdminShowingsHttpTests {
 
     private fun holdGroup(showingId: Long, seatIds: List<Int>): JsonNode =
         readJson(
-            send(adminRequest("POST", "/showings/$showingId/holds", json.writeValueAsString(mapOf("seatIds" to seatIds)), token = null)),
+            send(adminRequest("POST", "/showings/$showingId/holds", json.writeValueAsString(mapOf("seatIds" to seatIds, "expectedShowingRevision" to 1)), token = null)),
             201,
         )
 
-    private fun awaitAdminSeatLock() {
+    private fun lockFirstSeat(showingId: Long) {
+        jdbc.sql("select seat_id from show_seats where showing_id = :showingId and seat_id = 1 for update")
+            .param("showingId", showingId).query(Long::class.javaObjectType).single()
+    }
+
+    private fun awaitAdminSeatLock() = awaitLock("%order by seat_id for update%")
+
+    private fun awaitLock(queryPattern: String, expected: Int = 1) {
         val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
         dataSource.connection.use { observer ->
             observer.prepareStatement(
                 """
-                select exists (
-                    select 1 from pg_stat_activity
-                    where datname = current_database()
-                      and wait_event_type = 'Lock'
-                      and query like '%order by seat_id for update%'
-                )
+                select count(*) from pg_stat_activity
+                where datname = current_database()
+                  and wait_event_type = 'Lock'
+                  and query like ?
                 """.trimIndent(),
             ).use { statement ->
+                statement.setString(1, queryPattern)
                 while (System.nanoTime() < deadline) {
                     statement.executeQuery().use { rows ->
                         rows.next()
-                        if (rows.getBoolean(1)) return
+                        if (rows.getInt(1) == expected) return
                     }
                     Thread.sleep(20)
                 }
             }
         }
-        fail("Expected an admin request waiting for a PostgreSQL seat lock.")
+        fail("Expected $expected PostgreSQL lock waiters matching $queryPattern.")
     }
 
     private fun createShowing(title: String, startsAt: String = "2027-02-01T15:00:00Z"): JsonNode =
@@ -251,7 +323,10 @@ class AdminShowingsHttpTests {
         readJson(send(publicRequest("GET", "/showings/$showingId/seats")), 200).required("seats").values().toList()
 
     private fun holdSeat(showingId: Long): JsonNode =
-        readJson(send(publicRequest("POST", "/showings/$showingId/seats/1/holds")), 201)
+        readJson(send(holdRequest("/showings/$showingId/seats/1/holds", mapOf("expectedShowingRevision" to 1))), 201)
+
+    private fun holdRequest(path: String, body: Map<String, Any>): HttpRequest =
+        adminRequest("POST", path, json.writeValueAsString(body), token = null)
 
     private fun adminRequest(
         method: String,

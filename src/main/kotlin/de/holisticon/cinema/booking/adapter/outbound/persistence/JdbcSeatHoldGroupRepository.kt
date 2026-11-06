@@ -12,13 +12,6 @@ import org.springframework.stereotype.Repository
 
 @Repository
 class JdbcSeatHoldGroupRepository(private val jdbc: JdbcClient) : SeatHoldGroupRepository {
-    override fun lockShowing(showingId: Long): Boolean =
-        jdbc.sql("select id from showings where id = :showingId for key share")
-            .param("showingId", showingId)
-            .query(Long::class.javaObjectType)
-            .optional()
-            .isPresent
-
     override fun insert(showingId: Long, group: SeatHoldGroup) {
         jdbc.sql(
             "insert into seat_hold_groups (hold_id, showing_id, expires_at) values (:holdId, :showingId, :expiresAt)",

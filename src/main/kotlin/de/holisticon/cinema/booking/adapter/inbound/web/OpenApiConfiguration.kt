@@ -19,6 +19,7 @@ import org.springdoc.core.customizers.OpenApiCustomizer
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpHeaders
+import org.springframework.http.ProblemDetail
 
 internal const val ADMIN_BEARER_SECURITY = "adminBearer"
 internal const val ADMIN_UNAUTHORIZED_RESPONSE = "#/components/responses/AdminUnauthorized"
@@ -49,7 +50,7 @@ class OpenApiConfiguration {
         )
 
     @Bean
-    fun requiredResponseFields(): OpenApiCustomizer = OpenApiCustomizer { api ->
+    fun customizeResponseSchemas(): OpenApiCustomizer = OpenApiCustomizer { api ->
         val requiredFields = mapOf(
             BookingResponse::class.java.simpleName to listOf(BookingResponse::bookingId.name),
             SeatHoldResponse::class.java.simpleName to listOf(SeatHoldResponse::holdId.name, SeatHoldResponse::expiresAt.name),
@@ -65,10 +66,12 @@ class OpenApiConfiguration {
                 ShowingView::showingId.name,
                 ShowingView::movieTitle.name,
                 ShowingView::startsAt.name,
+                ShowingView::revision.name,
             ),
         )
         val schemas = api.components.schemas
         requiredFields.forEach { (name, fields) -> schemas.getValue(name).required = fields }
+        schemas.getValue(ProblemDetail::class.java.simpleName).properties.getValue("instance").format = "uri-reference"
     }
 
     private fun confirmBookingRequestSchema(): Schema<*> = ObjectSchema()

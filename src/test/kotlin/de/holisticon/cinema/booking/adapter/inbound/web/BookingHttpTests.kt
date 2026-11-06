@@ -124,13 +124,28 @@ class BookingHttpTests {
         assertFalse(release.at("/responses/204").has("content"))
 
         val responseSchemas = spec.at("/components/schemas")
+        assertEquals("uri-reference", responseSchemas.at("/ProblemDetail/properties/instance/format").stringValue())
+        for ((path, requestSchema) in mapOf(
+            "/seats/{seatId}/holds" to "ReserveSeatRequest",
+            "/holds" to "ReserveSeatGroupRequest",
+        )) {
+            val requestBody = operations.getValue("post /showings/{showingId}$path").required("requestBody")
+            assertTrue(requestBody.required("required").booleanValue())
+            assertEquals(
+                "#/components/schemas/$requestSchema",
+                requestBody.at("/content/application~1json/schema/\$ref").stringValue(),
+            )
+            val schema = responseSchemas.required(requestSchema)
+            assertTrue(schema.required("required").values().any { it.stringValue() == "expectedShowingRevision" })
+            assertEquals(1, schema.at("/properties/expectedShowingRevision/minimum").intValue())
+        }
         val requiredResponseFields = mapOf(
             "BookingResponse" to setOf("bookingId"),
             "SeatHoldResponse" to setOf("holdId", "expiresAt"),
             "SeatHoldGroupResponse" to setOf("holdId", "seatIds", "expiresAt", "bookingId"),
             "SeatMapView" to setOf("showingId", "seats"),
             "SeatView" to setOf("seatId", "status"),
-            "ShowingView" to setOf("showingId", "movieTitle", "startsAt"),
+            "ShowingView" to setOf("showingId", "movieTitle", "startsAt", "revision"),
         )
         for ((name, fields) in requiredResponseFields) {
             val schema = responseSchemas.required(name)
@@ -166,9 +181,9 @@ class BookingHttpTests {
     fun `the programme lists films and showtimes in chronological order`() {
         assertEquals(
             listOf(
-                ShowingView(2, "The Lantern House", Instant.parse("2027-01-15T15:00:00Z")),
-                ShowingView(1, "Cinema Preview", Instant.parse("2027-01-15T18:30:00Z")),
-                ShowingView(3, "Cinema Preview", Instant.parse("2027-01-16T18:30:00Z")),
+                ShowingView(2, "The Lantern House", Instant.parse("2027-01-15T15:00:00Z"), 1),
+                ShowingView(1, "Cinema Preview", Instant.parse("2027-01-15T18:30:00Z"), 1),
+                ShowingView(3, "Cinema Preview", Instant.parse("2027-01-16T18:30:00Z"), 1),
             ),
             programme(),
         )
@@ -189,7 +204,7 @@ class BookingHttpTests {
     @Test
     fun `group confirmation books every seat and recovers its receipt after expiry`() {
         clock.set(Instant.parse("2026-11-06T12:00:00Z"))
-        val group = groupHoldJson(postJson("/showings/1/holds", mapOf("seatIds" to listOf(21, 20))), 201)
+        val group = groupHoldJson(postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(21, 20))), 201)
         val holdId = UUID.fromString(group.required("holdId").stringValue())
         val credential = mapOf("holdId" to holdId.toString())
         assertEquals(listOf(20L, 21L), groupSeatIds(group))
@@ -228,14 +243,14 @@ class BookingHttpTests {
     fun `a group request never holds a subset and rejects invalid seat IDs`() {
         clock.set(Instant.parse("2026-11-06T13:00:00Z"))
         createdHold(hold(31))
-        assertEquals(409, postJson("/showings/1/holds", mapOf("seatIds" to listOf(30, 31))).statusCode())
+        assertEquals(409, postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(30, 31))).statusCode())
         assertSeatStatus(30, "AVAILABLE")
-        assertEquals(404, postJson("/showings/1/holds", mapOf("seatIds" to listOf(30, 201))).statusCode())
+        assertEquals(404, postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(30, 201))).statusCode())
         assertSeatStatus(30, "AVAILABLE")
-        assertEquals(404, postJson("/showings/999/holds", mapOf("seatIds" to listOf(30))).statusCode())
+        assertEquals(404, postJson("/showings/999/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(30))).statusCode())
 
         for (invalid in listOf(emptyList<Any>(), listOf(30, 30), listOf(0), listOf("30"), listOf(30.5))) {
-            assertEquals(400, postJson("/showings/1/holds", mapOf("seatIds" to invalid)).statusCode())
+            assertEquals(400, postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to invalid)).statusCode())
         }
         assertEquals(400, postJson("/showings/1/holds", emptyMap<String, Any>()).statusCode())
         assertEquals(400, postJson("/showings/1/holds/status", mapOf("holdId" to "invalid")).statusCode())
@@ -249,7 +264,7 @@ class BookingHttpTests {
         val contenders = listOf(listOf(42, 40, 41), listOf(43, 41, 40))
         val requests = withSeatLocked(40) {
             val pending = contenders.map { seats ->
-                client.sendAsync(jsonRequest("/showings/1/holds", mapOf("seatIds" to seats)), HttpResponse.BodyHandlers.ofString())
+                client.sendAsync(jsonRequest("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to seats)), HttpResponse.BodyHandlers.ofString())
             }
             awaitSeatLockWaiters(2)
             pending
@@ -268,7 +283,7 @@ class BookingHttpTests {
     @Test
     fun `releasing a stale group cannot release replacement holds`() {
         clock.set(Instant.parse("2026-11-06T15:00:00Z"))
-        val original = groupHoldJson(postJson("/showings/1/holds", mapOf("seatIds" to listOf(50, 51))), 201)
+        val original = groupHoldJson(postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(50, 51))), 201)
         val holdId = UUID.fromString(original.required("holdId").stringValue())
         val credential = mapOf("holdId" to holdId.toString())
         assertEquals(404, postJson("/showings/2/holds/status", credential).statusCode())
@@ -279,7 +294,7 @@ class BookingHttpTests {
         clock.set(Instant.parse(original.required("expiresAt").stringValue()))
         assertEquals(409, postJson("/showings/1/holds/status", credential).statusCode())
         assertEquals(409, postJson("/showings/1/bookings", bookingPayload(holdId)).statusCode())
-        val replacement = groupHoldJson(postJson("/showings/1/holds", mapOf("seatIds" to listOf(50, 52))), 201)
+        val replacement = groupHoldJson(postJson("/showings/1/holds", mapOf("expectedShowingRevision" to 1, "seatIds" to listOf(50, 52))), 201)
         val replacementCredential = mapOf("holdId" to replacement.required("holdId").stringValue())
         repeat(2) { assertEquals(204, postJson("/showings/1/holds/release", credential).statusCode()) }
         assertEquals(replacement, groupHoldJson(postJson("/showings/1/holds/status", replacementCredential), 200))
@@ -303,6 +318,22 @@ class BookingHttpTests {
         }
         assertNotEquals(holds[0].holdId, holds[1].holdId)
         showingIds.forEach { assertSeatStatus(1, "HELD", it) }
+    }
+
+    @Test
+    fun `both hold routes require a positive integer showing revision`() {
+        val paths = listOf(
+            "/showings/1/seats/32/holds" to emptyMap<String, Any?>(),
+            "/showings/1/holds" to mapOf("seatIds" to listOf(32, 33)),
+        )
+        for ((path, fields) in paths) {
+            assertEquals(400, postJson(path, fields).statusCode())
+            for (revision in listOf(null, 0, -1, 1.5, "1", true, Int.MAX_VALUE.toLong() + 1)) {
+                assertEquals(400, postJson(path, fields + ("expectedShowingRevision" to revision)).statusCode())
+            }
+        }
+        assertSeatStatus(32, "AVAILABLE")
+        assertSeatStatus(33, "AVAILABLE")
     }
 
     @Test
@@ -597,7 +628,7 @@ class BookingHttpTests {
         client.send(holdRequest(seatId, showingId), HttpResponse.BodyHandlers.ofString())
 
     private fun holdRequest(seatId: Long, showingId: Long = 1): HttpRequest =
-        request("/showings/$showingId/seats/$seatId/holds").POST(HttpRequest.BodyPublishers.noBody()).build()
+        jsonRequest("/showings/$showingId/seats/$seatId/holds", mapOf("expectedShowingRevision" to 1))
 
     private fun bookingPayload(holdId: UUID): Map<String, Any> = mapOf(
         "holdId" to holdId.toString(),
@@ -673,11 +704,12 @@ class BookingHttpTests {
         val showings = json.readTree(response.body())
         assertTrue(showings.isArray)
         return showings.values().map { showing ->
-            assertEquals(3, showing.size())
+            assertEquals(4, showing.size())
             ShowingView(
                 showingId = showing.required("showingId").longValue(),
                 movieTitle = showing.required("movieTitle").stringValue(),
                 startsAt = Instant.parse(showing.required("startsAt").stringValue()),
+                revision = showing.required("revision").intValue(),
             )
         }
     }

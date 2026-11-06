@@ -5,11 +5,13 @@ import de.holisticon.cinema.booking.application.group.SeatHoldGroupNotFound
 import de.holisticon.cinema.booking.application.group.SeatHoldGroupUnavailable
 import de.holisticon.cinema.booking.application.query.SeatMapTemporarilyUnavailable
 import de.holisticon.cinema.booking.application.query.ShowingNotFound
+import de.holisticon.cinema.booking.application.reserve.ShowingChanged
 import de.holisticon.cinema.booking.domain.BirthDateInFuture
 import de.holisticon.cinema.booking.domain.HoldNotConfirmable
 import de.holisticon.cinema.booking.domain.RequiredConsentsMissing
 import de.holisticon.cinema.booking.domain.SeatAlreadyBooked
 import de.holisticon.cinema.booking.domain.SeatAlreadyHeld
+import java.net.URI
 import org.springframework.http.HttpStatus
 import org.springframework.http.ProblemDetail
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -26,6 +28,12 @@ class ApiExceptionHandler {
     )
     fun conflict(error: RuntimeException): ProblemDetail =
         ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, error.message.orEmpty())
+
+    @ExceptionHandler(ShowingChanged::class)
+    fun showingChanged(error: ShowingChanged): ProblemDetail =
+        ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, error.message.orEmpty()).apply {
+            type = URI.create("urn:cinema:problem:showing-changed")
+        }
 
     @ExceptionHandler(SeatNotFound::class, ShowingNotFound::class, SeatHoldGroupNotFound::class)
     fun notFound(error: RuntimeException): ProblemDetail =

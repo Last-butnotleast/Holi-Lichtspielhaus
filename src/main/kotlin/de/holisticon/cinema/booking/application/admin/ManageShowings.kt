@@ -15,16 +15,15 @@ class ManageShowings(private val showings: ShowingsWriter, private val clock: Cl
     @Transactional
     fun create(movieTitle: String, startsAt: Instant): ShowingView {
         val start = startsAt.truncatedTo(ChronoUnit.MICROS)
-        val showingId = showings.create(movieTitle, start)
-        return ShowingView(showingId, movieTitle, start)
+        return showings.create(movieTitle, start)
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     fun update(showingId: Long, movieTitle: String, startsAt: Instant): ShowingView {
         lockEditableShowing(showingId)
         val start = startsAt.truncatedTo(ChronoUnit.MICROS)
-        showings.update(showingId, movieTitle, start)
-        return ShowingView(showingId, movieTitle, start)
+        val revision = showings.update(showingId, movieTitle, start)
+        return ShowingView(showingId, movieTitle, start, revision)
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

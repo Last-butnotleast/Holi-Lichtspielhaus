@@ -6,10 +6,25 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.util.UUID
 import tools.jackson.databind.JsonNode
 
-@Schema(requiredProperties = ["seatIds"])
+@Schema(requiredProperties = ["expectedShowingRevision"])
+class ReserveSeatRequest private constructor(
+    @get:Schema(minimum = "1")
+    val expectedShowingRevision: Int,
+) {
+    companion object {
+        @JvmStatic
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        fun fromJson(body: JsonNode): ReserveSeatRequest =
+            ReserveSeatRequest(body.requiredShowingRevision())
+    }
+}
+
+@Schema(requiredProperties = ["seatIds", "expectedShowingRevision"])
 class ReserveSeatGroupRequest private constructor(
     @get:ArraySchema(minItems = 1, uniqueItems = true, schema = Schema(type = "integer", format = "int64", minimum = "1"))
     val seatIds: Set<Long>,
+    @get:Schema(minimum = "1")
+    val expectedShowingRevision: Int,
 ) {
     companion object {
         @JvmStatic
@@ -24,9 +39,17 @@ class ReserveSeatGroupRequest private constructor(
             }.toSet()
             if (seatIds.size != entries.size()) throw InvalidBookingRequest()
 
-            return ReserveSeatGroupRequest(seatIds)
+            return ReserveSeatGroupRequest(seatIds, body.requiredShowingRevision())
         }
     }
+}
+
+private fun JsonNode.requiredShowingRevision(): Int {
+    val revision = get("expectedShowingRevision")
+        ?.takeIf { it.isIntegralNumber && it.canConvertToInt() }
+        ?.intValue()
+        ?: throw InvalidBookingRequest()
+    return revision.takeIf { it > 0 } ?: throw InvalidBookingRequest()
 }
 
 @Schema(requiredProperties = ["holdId"])

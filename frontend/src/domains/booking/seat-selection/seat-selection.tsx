@@ -27,6 +27,7 @@ type SeatSelectionProps = {
   failed: boolean
   missing: boolean
   busy: boolean
+  selectionDisabled: boolean
   notice?: string
   onRetry: () => void
   onSelect: (seat: CinemaSeat) => void
@@ -34,7 +35,7 @@ type SeatSelectionProps = {
   onReserve: () => void
 }
 
-export function SeatSelection({ seats, selectedSeatIds, unavailableSeatIds, loading, failed, missing, busy, notice, onRetry, onSelect, onRemoveUnavailable, onReserve }: SeatSelectionProps) {
+export function SeatSelection({ seats, selectedSeatIds, unavailableSeatIds, loading, failed, missing, busy, selectionDisabled, notice, onRetry, onSelect, onRemoveUnavailable, onReserve }: SeatSelectionProps) {
   const availableCount = seats.filter(({ status }) => status === 'AVAILABLE').length
   const selectedCount = selectedSeatIds.length
 
@@ -112,7 +113,7 @@ export function SeatSelection({ seats, selectedSeatIds, unavailableSeatIds, load
                           type="button"
                           aria-label={'Reihe ' + seat.row + ', Platz ' + seat.number + ', ' + statusLabels[seat.status]}
                           aria-pressed={selected || !unavailable ? selected : undefined}
-                          disabled={busy || (unavailable && !selected)}
+                          disabled={busy || selectionDisabled || (unavailable && !selected)}
                           onClick={() => onSelect(seat)}
                           className={'aspect-square rounded-md border text-xs font-semibold tabular-nums transition enabled:cursor-pointer enabled:hover:bg-primary enabled:hover:text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring ' + style}
                         >
@@ -132,7 +133,7 @@ export function SeatSelection({ seats, selectedSeatIds, unavailableSeatIds, load
             <button
               type="button"
               onClick={onReserve}
-              disabled={busy || failed || selectedCount === 0 || unavailableSeatIds.length > 0}
+              disabled={busy || selectionDisabled || failed || selectedCount === 0 || unavailableSeatIds.length > 0}
               className="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 font-semibold text-primary-foreground enabled:cursor-pointer enabled:hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:opacity-50"
             >
               Reservieren

@@ -4,8 +4,6 @@ import java.time.Instant
 import java.util.UUID
 
 interface SeatHoldGroupRepository {
-    fun lockShowing(showingId: Long): Boolean
-
     fun insert(showingId: Long, group: SeatHoldGroup)
 
     fun findForUpdate(showingId: Long, holdId: UUID): SeatHoldGroup?

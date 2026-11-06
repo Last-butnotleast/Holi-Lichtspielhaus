@@ -4,7 +4,9 @@ import de.holisticon.cinema.booking.application.SeatNotFound
 import de.holisticon.cinema.booking.application.port.SeatHoldGroup
 import de.holisticon.cinema.booking.application.port.SeatHoldGroupMember
 import de.holisticon.cinema.booking.application.port.SeatHoldGroupRepository
+import de.holisticon.cinema.booking.application.port.ShowingReservationLock
 import de.holisticon.cinema.booking.application.query.ShowingNotFound
+import de.holisticon.cinema.booking.application.reserve.requireRevision
 import de.holisticon.cinema.booking.domain.BookingConfirmation
 import de.holisticon.cinema.booking.domain.CustomerDetails
 import de.holisticon.cinema.booking.domain.ShowSeat
@@ -19,13 +21,14 @@ import org.springframework.transaction.annotation.Transactional
 
 @Service
 class ManageSeatHoldGroups(
+    private val showings: ShowingReservationLock,
     private val groups: SeatHoldGroupRepository,
     private val seats: ShowSeatRepository,
     private val clock: Clock,
 ) {
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    fun reserve(showingId: Long, seatIds: Set<Long>): SeatHoldGroup {
-        lockShowing(showingId)
+    fun reserve(showingId: Long, seatIds: Set<Long>, expectedShowingRevision: Int): SeatHoldGroup {
+        showings.requireRevision(showingId, expectedShowingRevision)
         val lockedSeats = seatIds.sorted().map { seatId -> lockSeat(showingId, seatId) }
         val now = currentTime()
         val holds = lockedSeats.map { seat -> seat.reserve(UUID.randomUUID(), now) }
@@ -77,12 +80,8 @@ class ManageSeatHoldGroups(
         return BookingConfirmation.Created(bookingId)
     }
 
-    private fun lockShowing(showingId: Long) {
-        if (!groups.lockShowing(showingId)) throw ShowingNotFound(showingId)
-    }
-
     private fun lockGroup(showingId: Long, holdId: UUID): SeatHoldGroup {
-        lockShowing(showingId)
+        showings.lockRevision(showingId) ?: throw ShowingNotFound(showingId)
         return groups.findForUpdate(showingId, holdId) ?: throw SeatHoldGroupNotFound()
     }
 

@@ -3,6 +3,7 @@ import { useBlocker } from '@tanstack/react-router'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   BookingApiError,
+  ShowingChangedError,
   confirmBooking,
   loadHoldStatus,
   loadSeats,
@@ -21,7 +22,10 @@ type BookingProgress =
 
 type BookingAction = 'reserve' | 'confirm' | 'release'
 
+type SeatSelection = { revision: number; ids: number[] }
+
 const staleNotice = 'Die Reservierung ist nicht mehr verfügbar. Bitte wähle deine Plätze erneut.'
+const showingChangedNotice = 'Der Film oder die Spielzeit wurde geändert. Prüfe die aktuellen Angaben und wähle deine Plätze erneut.'
 const uncertainNotice = 'Der Buchungsstatus ist unklar. Prüfe die Bestätigung erneut, bevor du andere Plätze wählst.'
 
 function responseStatus(error: unknown) {
@@ -32,13 +36,14 @@ function seatMapKey(showingId: number) {
   return ['showings', showingId, 'seats'] as const
 }
 
-export function useBookingManager(showingId: number) {
+export function useBookingManager(showingId: number, showingRevision: number | undefined, refreshShowing: () => Promise<unknown>) {
   const queryClient = useQueryClient()
   const [progress, setProgress] = useState<BookingProgress>(() => {
     const saved = readSavedHold(showingId)
     return saved ? { phase: 'checking', saved, attempt: 0 } : { phase: 'selection' }
   })
-  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([])
+  const [selection, setSelection] = useState<SeatSelection>()
+  const [rejectedRevision, setRejectedRevision] = useState<number>()
   const [notice, setNotice] = useState<string>()
   const [confirmationError, setConfirmationError] = useState<string>()
   const [now, setNow] = useState(() => performance.now())
@@ -49,6 +54,10 @@ export function useBookingManager(showingId: number) {
   const checkout = progress.phase === 'checkout' ? progress : undefined
   const checked = progress.phase === 'checking' ? progress : checkout?.attempt !== undefined ? checkout : undefined
   const deadline = checkout?.deadline
+  const selectableRevision = showingRevision === rejectedRevision ? undefined : showingRevision
+  const waitingForShowing = selectableRevision === undefined
+  const showingChanged = selection !== undefined && selection.revision !== showingRevision
+  const selectedSeatIds = waitingForShowing || showingChanged ? [] : selection?.ids ?? []
 
   const warnBeforeUnload = useCallback(() => actionInFlight.current !== null || confirmationPending.current, [])
   const blockNavigation = useCallback(() => {
@@ -86,12 +95,14 @@ export function useBookingManager(showingId: number) {
   })
 
   const reserve = useMutation({
-    mutationFn: (seatIds: number[]) => reserveSeats(showingId, seatIds),
+    mutationFn: ({ ids, revision }: SeatSelection) => reserveSeats(showingId, ids, revision),
     networkMode: 'always',
     retry: false,
     gcTime: 0,
     onError: (error) => {
-      if (responseStatus(error) === 409) return queryClient.invalidateQueries({ queryKey: seatMapKey(showingId) })
+      if (responseStatus(error) === 409 && !(error instanceof ShowingChangedError)) {
+        return queryClient.invalidateQueries({ queryKey: seatMapKey(showingId) })
+      }
     },
   })
 
@@ -186,32 +197,46 @@ export function useBookingManager(showingId: number) {
   const unavailableSeatIds = selectedSeatIds.filter((id) => !availableSeatIds.has(id))
 
   function toggleSeat(seat: CinemaSeat) {
-    if (progress.phase !== 'selection' || actionInFlight.current) return
+    if (progress.phase !== 'selection' || actionInFlight.current || selectableRevision === undefined) return
 
-    setSelectedSeatIds((ids) => {
-      if (ids.includes(seat.id)) return ids.filter((id) => id !== seat.id)
-      return seat.status === 'AVAILABLE' ? [...ids, seat.id] : ids
+    setSelection((current) => {
+      const ids = current?.revision === selectableRevision ? current.ids : []
+      if (ids.includes(seat.id)) {
+        const remaining = ids.filter((id) => id !== seat.id)
+        return remaining.length ? { revision: selectableRevision, ids: remaining } : undefined
+      }
+      return seat.status === 'AVAILABLE' ? { revision: selectableRevision, ids: [...ids, seat.id] } : current
     })
+    if (notice === showingChangedNotice) setNotice(undefined)
   }
 
   function removeUnavailableSeats() {
-    if (progress.phase !== 'selection' || actionInFlight.current) return
+    if (progress.phase !== 'selection' || actionInFlight.current || !selection || waitingForShowing || showingChanged) return
 
-    setSelectedSeatIds((ids) => ids.filter((id) => availableSeatIds.has(id)))
+    const ids = selection.ids.filter((id) => availableSeatIds.has(id))
+    setSelection(ids.length ? { ...selection, ids } : undefined)
     setNotice(undefined)
   }
 
   async function reserveSelection() {
-    if (progress.phase !== 'selection' || !selectedSeatIds.length || unavailableSeatIds.length || actionInFlight.current || seats.isError) return
+    if (progress.phase !== 'selection' || !selection || !selectedSeatIds.length || unavailableSeatIds.length || actionInFlight.current || seats.isError) return
 
     actionInFlight.current = 'reserve'
     setNotice(undefined)
     try {
-      const { hold, deadline } = await reserve.mutateAsync([...selectedSeatIds].sort((a, b) => a - b))
-      setSelectedSeatIds([])
+      const { hold, deadline } = await reserve.mutateAsync({ ...selection, ids: [...selectedSeatIds].sort((a, b) => a - b) })
+      setSelection(undefined)
       openCheckout({ hold, confirmationPending: false }, deadline)
       refreshSeats()
     } catch (error) {
+      if (error instanceof ShowingChangedError) {
+        setSelection(undefined)
+        setRejectedRevision(selection.revision)
+        setNotice(showingChangedNotice)
+        void refreshShowing()
+        refreshSeats()
+        return
+      }
       const conflict = responseStatus(error) === 409
       setNotice(conflict
         ? 'Mindestens ein Platz ist inzwischen vergeben. Prüfe deine Auswahl und reserviere erneut.'
@@ -274,10 +299,11 @@ export function useBookingManager(showingId: number) {
   return {
     progress,
     seats,
-    notice,
+    notice: showingChanged ? showingChangedNotice : notice,
     confirmationError,
     selectedSeatIds,
     unavailableSeatIds,
+    waitingForShowing,
     toggleSeat,
     removeUnavailableSeats,
     reserveSelection,

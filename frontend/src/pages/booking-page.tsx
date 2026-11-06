@@ -39,7 +39,7 @@ function SeatSummary({ seatIds }: { seatIds: number[] }) {
 export function BookingPage({ showingId }: { showingId: number }) {
   const showings = useShowings()
   const showing = showings.data?.find((entry) => entry.id === showingId)
-  const manager = useBookingManager(showingId)
+  const manager = useBookingManager(showingId, showing?.revision, showings.refetch)
   const { progress } = manager
   const heading = useRef<HTMLHeadingElement>(null)
   const missing = manager.seats.error instanceof BookingApiError && manager.seats.error.status === 404
@@ -85,6 +85,22 @@ export function BookingPage({ showingId }: { showingId: number }) {
           {showing ? showing.movieTitle + ' · ' + formatShowingTime(showing.startsAt) : 'Vorstellung'}
         </p>
       </header>
+      {progress.phase === 'selection' && manager.waitingForShowing && !missing && (
+        showings.isFetching ? (
+          <p role="status" className="rounded-2xl border bg-card p-4">Vorstellung wird geladen …</p>
+        ) : (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-4">
+            <p>Die aktuellen Angaben zur Vorstellung fehlen.</p>
+            <button
+              type="button"
+              onClick={() => { void showings.refetch() }}
+              className="rounded-lg border border-primary px-3 py-2 font-semibold text-primary hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+            >
+              Vorstellung neu laden
+            </button>
+          </div>
+        )
+      )}
       {progress.phase === 'selection' && (
         <SeatSelection
           seats={manager.seats.data ?? []}
@@ -94,6 +110,7 @@ export function BookingPage({ showingId }: { showingId: number }) {
           failed={manager.seats.isError}
           missing={missing}
           busy={manager.isReserving}
+          selectionDisabled={manager.waitingForShowing}
           notice={manager.notice}
           onRetry={() => { void manager.seats.refetch() }}
           onSelect={manager.toggleSeat}

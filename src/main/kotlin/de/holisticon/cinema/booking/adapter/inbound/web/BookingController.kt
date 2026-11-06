@@ -46,18 +46,25 @@ class BookingController(
                     schema = Schema(implementation = SeatHoldResponse::class),
                 )],
             ),
-            ApiResponse(responseCode = "400", description = "The showing or seat ID is invalid.",
-                content = [Content(mediaType = APPLICATION_JSON_VALUE, schema = Schema(type = "object"))]),
+            ApiResponse(responseCode = "400", description = "The path or expected showing revision is invalid.",
+                content = [
+                    Content(mediaType = APPLICATION_JSON_VALUE, schema = Schema(type = "object")),
+                    Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class)),
+                ]),
             ApiResponse(responseCode = "404", description = "The showing or seat does not exist.",
                 content = [Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class))]),
-            ApiResponse(responseCode = "409", description = "The seat is held or booked.",
+            ApiResponse(responseCode = "409", description = "The seat is held or booked, or the showing changed (urn:cinema:problem:showing-changed).",
                 content = [Content(mediaType = APPLICATION_PROBLEM_JSON_VALUE, schema = Schema(implementation = ProblemDetail::class))]),
         ],
     )
     @PostMapping("/{seatId}/holds")
     @ResponseStatus(HttpStatus.CREATED)
-    fun hold(@PathVariable showingId: Long, @PathVariable seatId: Long): SeatHoldResponse {
-        val hold = reserveSeat.reserve(showingId, seatId)
+    fun hold(
+        @PathVariable showingId: Long,
+        @PathVariable seatId: Long,
+        @RequestBody request: ReserveSeatRequest,
+    ): SeatHoldResponse {
+        val hold = reserveSeat.reserve(showingId, seatId, request.expectedShowingRevision)
         return SeatHoldResponse(hold.id, hold.expiresAt)
     }
 

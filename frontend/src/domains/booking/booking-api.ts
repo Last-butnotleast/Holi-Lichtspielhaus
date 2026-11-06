@@ -23,6 +23,12 @@ export class BookingApiError extends Error {
   }
 }
 
+export class ShowingChangedError extends BookingApiError {
+  constructor() {
+    super(409)
+  }
+}
+
 function responseData<T>(response: Response, data: T | undefined): T {
   if (!response.ok) throw new BookingApiError(response.status)
   if (data === undefined) throw new Error('Die Antwort war unvollständig.')
@@ -55,13 +61,23 @@ export async function loadSeats(showingId: number, signal: AbortSignal): Promise
   }))
 }
 
-export async function reserveSeats(showingId: number, seatIds: number[]) {
+export async function reserveSeats(showingId: number, seatIds: number[], expectedShowingRevision: number) {
   const result = await apiClient.POST('/showings/{showingId}/holds', {
     params: { path: { showingId } },
-    body: { seatIds },
+    body: { seatIds, expectedShowingRevision },
     signal: AbortSignal.timeout(BOOKING_REQUEST_TIMEOUT),
   })
 
+  const problem = result.error
+  if (
+    result.response.status === 409 &&
+    typeof problem === 'object' &&
+    problem !== null &&
+    'type' in problem &&
+    problem.type === 'urn:cinema:problem:showing-changed'
+  ) {
+    throw new ShowingChangedError()
+  }
   const hold = toSeatHold(responseData(result.response, result.data))
   return { hold, deadline: displayDeadline(result.response, hold.expiresAt) }
 }
